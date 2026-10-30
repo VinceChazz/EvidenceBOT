@@ -107,21 +107,30 @@ class LLMClient:
 
         started = time.perf_counter()
         last_error: Optional[str] = None
-        for attempt in range(2):
+        # Some models (reasoning models) reject ``temperature``/``max_tokens`` and need
+        # ``max_completion_tokens`` instead, so the call parameters are adjusted on retry.
+        use_max_completion_tokens = False
+        drop_temperature = False
+        for attempt in range(3):
             try:
-                response = self._client.chat.completions.create(  # type: ignore[union-attr]
-                    model=self.model,
-                    messages=[
+                request: Dict[str, Any] = {
+                    "model": self.model,
+                    "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    temperature=(
+                    "response_format": {"type": "json_object"},
+                    "timeout": self.settings.llm_timeout_seconds,
+                }
+                if not drop_temperature:
+                    request["temperature"] = (
                         self.settings.llm_temperature if temperature is None else temperature
-                    ),
-                    max_tokens=self.settings.llm_max_output_tokens,
-                    response_format={"type": "json_object"},
-                    timeout=self.settings.llm_timeout_seconds,
-                )
+                    )
+                if use_max_completion_tokens:
+                    request["max_completion_tokens"] = self.settings.llm_max_output_tokens
+                else:
+                    request["max_tokens"] = self.settings.llm_max_output_tokens
+                response = self._client.chat.completions.create(**request)  # type: ignore[union-attr]
                 raw = response.choices[0].message.content or ""
                 data = extract_json_object(raw)
                 if not data:
@@ -158,6 +167,13 @@ class LLMClient:
                 return result
             except Exception as exc:  # noqa: BLE001 - surface as a clean error
                 last_error = redact(f"{type(exc).__name__}: {exc}")
+                message = str(exc).lower()
+                if "max_tokens" in message and "max_completion_tokens" in message:
+                    use_max_completion_tokens = True
+                elif "max_completion_tokens" in message and "not supported" in message:
+                    use_max_completion_tokens = False
+                if "temperature" in message:
+                    drop_temperature = True
                 logger.warning("generation attempt %d failed: %s", attempt + 1, last_error)
                 time.sleep(0.5 * (attempt + 1))
 
