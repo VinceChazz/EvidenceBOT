@@ -1,0 +1,16 @@
+{"version": "6.9", "hitCount": 2, "resultList": {"result": [
+  {"id": "26719248", "source": "MED", "pmid": "26719248", "pmcid": "PMC5000001",
+   "doi": "10.1155/2016/2671924",
+   "title": "Interleukin-6 and autoimmunity: a review of the pathogenic role of IL-6 in rheumatoid arthritis.",
+   "authorString": "Hanow I, Tanaka M.", "pubYear": "2016",
+   "journalInfo": {"journal": {"title": "Journal of Immunology Research"}},
+   "abstractText": "Interleukin-6 (IL-6) is a pleiotropic cytokine with a central role in rheumatoid arthritis. IL-6 activates JAK/STAT3 signalling and promotes Th17 differentiation.",
+   "isOpenAccess": "Y", "pubTypeList": {"pubType": ["Review", "Journal Article"]},
+   "citedByCount": 42},
+  {"id": "PPR123456", "source": "PPR", "pmid": null, "doi": "10.1101/2022.01.01.000001",
+   "title": "A preprint on IL-6 blockade and fatigue in rheumatoid arthritis",
+   "authorString": "Doe J.", "pubYear": "2022",
+   "journalInfo": {"journal": {"title": "medRxiv"}},
+   "abstractText": "In this preprint we report that IL-6 blockade reduced fatigue scores in rheumatoid arthritis.",
+   "isOpenAccess": "N", "pubTypeList": {"pubType": ["Preprint"]}, "citedByCount": 1}
+]}}

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">26719248</PMID>
+      <Article PubModel="Print-Electronic">
+        <Journal>
+          <JournalIssue CitedMedium="Internet">
+            <Volume>2016</Volume>
+            <PubDate><Year>2016</Year><Month>Aug</Month></PubDate>
+          </JournalIssue>
+          <Title>Journal of Immunology Research</Title>
+          <ISOAbbreviation>J Immunol Res</ISOAbbreviation>
+        </Journal>
+        <ArticleTitle>Interleukin-6 and autoimmunity: a review of the pathogenic role of IL-6 in rheumatoid arthritis.</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="BACKGROUND">Interleukin-6 (IL-6) is a pleiotropic cytokine with a central role in rheumatoid arthritis.</AbstractText>
+          <AbstractText Label="FINDINGS">IL-6 activates JAK/STAT3 signalling in synovial tissue, promotes Th17 differentiation and supports B-cell autoantibody production. IL-6 receptor blockade reduces C-reactive protein and improves tender joint counts in patients with rheumatoid arthritis.</AbstractText>
+        </Abstract>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y"><LastName>Hanow</LastName><ForeName>Ilse</ForeName><Initials>I</Initials></Author>
+          <Author ValidYN="Y"><LastName>Tanaka</LastName><ForeName>Masaru</ForeName><Initials>M</Initials></Author>
+        </AuthorList>
+        <PublicationTypeList>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+          <PublicationType UI="D016454">Review</PublicationType>
+        </PublicationTypeList>
+        <ArticleDate DateType="Electronic"><Year>2016</Year><Month>08</Month><Day>03</Day></ArticleDate>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">26719248</ArticleId>
+        <ArticleId IdType="doi">10.1155/2016/2671924</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">30123456</PMID>
+      <Article PubModel="Print">
+        <Journal>
+          <JournalIssue CitedMedium="Print">
+            <Volume>392</Volume>
+            <PubDate><Year>2018</Year></PubDate>
+          </JournalIssue>
+          <Title>Annals of the Rheumatic Diseases</Title>
+          <ISOAbbreviation>Ann Rheum Dis</ISOAbbreviation>
+        </Journal>
+        <ArticleTitle>Randomised controlled trial of interleukin-6 receptor blockade in active rheumatoid arthritis.</ArticleTitle>
+        <Abstract>
+          <AbstractText>In this randomised controlled trial, interleukin-6 receptor blockade improved American College of Rheumatology response rates and reduced disease activity scores in patients with active rheumatoid arthritis. Serious infection rates were modestly increased.</AbstractText>
+        </Abstract>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y"><LastName>Okafor</LastName><ForeName>Ada</ForeName><Initials>A</Initials></Author>
+        </AuthorList>
+        <PublicationTypeList>
+          <PublicationType UI="D016449">Randomized Controlled Trial</PublicationType>
+        </PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">30123456</ArticleId>
+        <ArticleId IdType="doi">10.1136/annrheumdis-2018-0001</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

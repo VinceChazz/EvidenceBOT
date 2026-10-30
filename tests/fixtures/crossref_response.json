@@ -1,0 +1,14 @@
+{"status": "ok", "message-type": "work-list", "message": {"total-results": 2, "items": [
+  {"DOI": "10.1136/annrheumdis-2018-0001", "title": ["Randomised controlled trial of interleukin-6 receptor blockade in active rheumatoid arthritis"],
+   "author": [{"given": "Ada", "family": "Okafor"}],
+   "issued": {"date-parts": [[2018, 6]]},
+   "container-title": ["Annals of the Rheumatic Diseases"],
+   "publisher": "BMJ", "type": "journal-article",
+   "abstract": "<jats:p>Interleukin-6 receptor blockade improved ACR response rates in active rheumatoid arthritis.</jats:p>",
+   "URL": "https://doi.org/10.1136/annrheumdis-2018-0001", "subject": ["Rheumatology"], "is-referenced-by-count": 12},
+  {"DOI": "10.1000/example.only.metadata", "title": ["Interleukin-6 signalling in inflammatory disease"],
+   "author": [{"given": "M", "family": "Schmidt"}],
+   "issued": {"date-parts": [[2020]]},
+   "container-title": ["Journal of Inflammation"], "publisher": "Example Press",
+   "type": "journal-article", "URL": "https://doi.org/10.1000/example.only.metadata"}
+]}}

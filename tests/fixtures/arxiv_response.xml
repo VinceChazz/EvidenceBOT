@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <title type="html">ArXiv Query: search_query=all:single cell</title>
+  <entry>
+    <id>http://arxiv.org/abs/2101.01234v2</id>
+    <updated>2021-01-05T00:00:00Z</updated>
+    <published>2021-01-04T00:00:00Z</published>
+    <title>Deep learning for single-cell RNA sequencing analysis in cancer immunology</title>
+    <summary>We present a deep learning model for single-cell RNA sequencing analysis that improves cell-type annotation in tumour immunology datasets. The model is evaluated on three public datasets.</summary>
+    <author><name>Ravi Kumar</name></author>
+    <author><name>Lena Fischer</name></author>
+    <arxiv:doi>10.48550/arXiv.2101.01234</arxiv:doi>
+    <arxiv:primary_category term="q-bio.QM"/>
+    <category term="q-bio.QM"/>
+    <category term="cs.LG"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2102.09999v1</id>
+    <updated>2021-02-19T00:00:00Z</updated>
+    <published>2021-02-19T00:00:00Z</published>
+    <title>A macroeconomic model of housing markets</title>
+    <summary>This paper studies housing market dynamics with a general equilibrium model.</summary>
+    <author><name>Econ Author</name></author>
+    <arxiv:primary_category term="econ.GN"/>
+    <category term="econ.GN"/>
+  </entry>
+</feed>
