@@ -165,338 +165,494 @@ if _pending_question is not None:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar
+# TOP NAVIGATION + MULTI-PAGE INTERFACE
+#
+# Splice instructions:
+# 1. Keep your existing imports, constants, helper functions, run_query(),
+#    _build_settings(), _fingerprint(), st.set_page_config(), CSS setup,
+#    session-state initialization, and pending-question handling.
+# 2. Replace the old UI section beginning at the old `render_sidebar()` call
+#    (or the old `# Sidebar` section) through the end of app.py with this block.
+# 3. This block expects the functions/classes already defined in your prefix:
+#    render_header, render_metrics, render_answer, render_strength,
+#    render_citations, render_retrieval_details, render_comparison,
+#    render_evidence_assessment, render_notices, render_outcome_banner,
+#    backend_status, generation_status, clear_all_caches, redact,
+#    run_query, _build_settings, _fingerprint, SOURCE_OPTIONS, EXAMPLES,
+#    APP_VERSION, Settings, EvidenceBotResult.
 # ---------------------------------------------------------------------------
 
-
-def render_sidebar() -> Dict[str, Any]:
-    settings = Settings()
-    with st.sidebar:
-        st.markdown("## 🔬 EvidenceBot")
-        st.caption("Scientific evidence verification · v" + APP_VERSION)
-
-        st.markdown("### Retrieval sources")
-        selected_sources = st.multiselect(
-            "Databases queried concurrently",
-            options=list(SOURCE_OPTIONS.keys()),
-            default=list(SOURCE_OPTIONS.keys()),
-            format_func=lambda key: SOURCE_OPTIONS[key],
-            help="Wikipedia is background material only and is never cited as scientific proof.",
-        )
-        max_per_source = st.slider(
-            "Results per source", min_value=3, max_value=20, value=8, step=1,
-            help="How many records each API may return.",
-        )
-
-        st.markdown("### Ranking and evidence gate")
-        top_k = st.slider("TOP_K — passages kept", 3, 20, 10, 1)
-        threshold = st.slider(
-            "RELEVANCE_THRESHOLD", 0.05, 0.90, 0.30, 0.05,
-            help="Hybrid relevance a passage must reach to count as on-topic.",
-        )
-        min_passages = st.slider(
-            "MINIMUM_EVIDENCE_PASSAGES", 1, 5, 2, 1,
-            help="On-topic passages required before answering. Higher = stricter abstention.",
-        )
-        st.caption(
-            "These parameters map directly to `config.py` / environment variables. "
-            "A stricter threshold means more abstentions — the intended trade-off."
-        )
-
-        st.markdown("### Model status")
-        status = generation_status(settings)
-        if status["llm_key_configured"]:
-            st.success(
-                f"{status['provider'].upper()} API key detected · `{status['model']}`"
-            )
-        else:
-            st.warning(
-                "No language-model API key detected. Retrieval, ranking and the "
-                "evidence gate still work; answers use an extractive digest."
-            )
-        st.caption(
-            f"Embeddings: `{status['embedding_backend']}`"
-            + (
-                f" ({status['embedding_model']})"
-                if status["embedding_backend"] == "openai"
-                else " (offline hashed features)"
-            )
-        )
-        vector_backend = backend_status()
-        st.caption(
-            "Vector store: "
-            + ("FAISS (in-memory)" if vector_backend["faiss_available"] else "NumPy fallback")
-        )
-
-        st.markdown("### Maintenance")
-        if st.button("Clear cached API/LLM responses", **stretch_kwargs()):
-            clear_all_caches()
-            run_query.clear()
-            st.toast("Caches cleared.")
-
-        with st.expander("Where do I put my API key?", expanded=False):
-            st.markdown(
-                "Create a file named `.env` in the project root:\n\n"
-                "```\nOPENAI_API_KEY=sk-...\n```\n\n"
-                "or use `.streamlit/secrets.toml`:\n\n"
-                "```\nOPENAI_API_KEY = \"sk-...\"\n```\n\n"
-                "The key is read from the environment only. It is never written to logs, "
-                "displayed in the interface, or committed (`.env` and "
-                "`.streamlit/secrets.toml` are git-ignored)."
-            )
-
-        with st.expander("What EvidenceBot will not do", expanded=False):
-            st.markdown(
-                "- It will not answer without retrieved, on-topic evidence.\n"
-                "- It will not invent citations, DOIs or URLs.\n"
-                "- It will not call the LLM when the evidence gate abstains.\n"
-                "- It will not treat Wikipedia or preprints as equal to peer-reviewed research.\n"
-                "- It will not interpret missing evidence as proof that a claim is false."
-            )
-
-        st.markdown("---")
-        st.caption("From real literature → to trusted answers.")
-
-    return {
-        "sources": tuple(selected_sources),
-        "top_k": top_k,
-        "threshold": threshold,
-        "min_passages": min_passages,
-        "max_per_source": max_per_source,
-    }
-
-
-config = render_sidebar()
-
-
-# ---------------------------------------------------------------------------
-# Header + search
-# ---------------------------------------------------------------------------
-
-render_header()
-section("1", "Ask a scientific question")
-
-with st.form("search_form", clear_on_submit=False):
-    question = st.text_input(
-        "Research question",
-        key="question_input",
-        placeholder="e.g. What role does IL-6 play in rheumatoid arthritis?",
-        label_visibility="collapsed",
-    )
-    col_search, col_clear, _ = st.columns([1.2, 0.8, 3])
-    submitted = col_search.form_submit_button("🔍 Search evidence", **stretch_kwargs(), type="primary")
-    cleared = col_clear.form_submit_button("✕ Clear", **stretch_kwargs())
-
+# Top navigation styling. The radio control remains accessible and functional
+# if a Streamlit version changes the DOM structure used by these selectors.
 st.markdown(
-    '<div class="eb-small" style="margin-top:-6px">Try an example:</div>',
+    """
+    <style>
+    div[data-testid="stRadio"] > div {
+        gap: 0.45rem;
+        flex-wrap: wrap;
+    }
+    div[data-testid="stRadio"] label {
+        background: rgba(128, 128, 128, 0.09);
+        border: 1px solid rgba(128, 128, 128, 0.22);
+        border-radius: 999px;
+        padding: 0.42rem 0.95rem;
+        margin: 0;
+    }
+    div[data-testid="stRadio"] label:has(input:checked) {
+        background: rgba(30, 130, 90, 0.16);
+        border-color: rgba(30, 130, 90, 0.65);
+    }
+    div[data-testid="stRadio"] > label {
+        display: none;
+    }
+    .page-intro {
+        color: var(--text-color);
+        opacity: 0.72;
+        margin-top: -0.35rem;
+        margin-bottom: 1.1rem;
+    }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
-example_columns = st.columns(3)
-for index, (example_question, tag) in enumerate(EXAMPLES):
-    column = example_columns[index % 3]
-    short = example_question if len(example_question) <= 72 else example_question[:69] + "…"
-    if column.button(
-        f"{tag} · {short}",
-        key=f"example_{index}",
-        **stretch_kwargs(),
-        help=example_question,
-    ):
-        st.session_state.pending_question = example_question
-        st.session_state.run_requested = True
-        st.rerun()
 
-if cleared:
-    st.session_state.result = None
-    st.session_state.last_error = None
-    # Applied before the widget is re-instantiated on the next run.
-    st.session_state.pending_question = ""
-    st.rerun()
+# Persistent UI preferences. These values survive Streamlit reruns.
+st.session_state.setdefault("active_page", "Overview")
+st.session_state.setdefault("selected_sources", list(SOURCE_OPTIONS))
+st.session_state.setdefault("top_k", 8)
+st.session_state.setdefault("threshold", 0.35)
+st.session_state.setdefault("min_passages", 2)
+st.session_state.setdefault("max_per_source", 4)
 
-should_run = submitted or st.session_state.pop("run_requested", False)
-if should_run:
-    query = (question or st.session_state.get("question_input") or "").strip()
-    if not query:
-        st.warning("Enter a research question first.")
-    elif not config["sources"]:
-        st.error("Select at least one retrieval source in the sidebar.")
-    else:
-        settings = _build_settings(
-            config["sources"], config["top_k"], config["threshold"],
-            config["min_passages"], config["max_per_source"],
+PAGES = ["Overview", "Research", "Sources", "Evidence", "Settings", "History", "About"]
+
+# Keep the existing header/branding, then show the navigation immediately below.
+render_header()
+
+selected_page = st.radio(
+    "Navigation",
+    PAGES,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="active_page",
+)
+st.divider()
+
+
+def current_config():
+    """Build settings from the current persistent UI selections."""
+    return _build_settings(
+        sources=st.session_state.selected_sources,
+        top_k=st.session_state.top_k,
+        threshold=st.session_state.threshold,
+        min_passages=st.session_state.min_passages,
+        max_per_source=st.session_state.max_per_source,
+    )
+
+
+def show_system_status(settings):
+    """Display the current LLM and retrieval backend status."""
+    llm_status = generation_status(settings)
+    vector_status = backend_status()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.caption("Language model")
+        if llm_status.get("llm_key_configured"):
+            st.success(
+                f'{llm_status.get("provider", "LLM")} · '
+                f'{llm_status.get("model", "Configured")}'
+            )
+        else:
+            st.warning("API key not configured — generation may be unavailable.")
+    with col2:
+        st.caption("Retrieval / vector backend")
+        backend_name = (
+            "FAISS (in-memory)"
+            if vector_status.get("faiss_available")
+            else "NumPy fallback"
         )
-        with st.spinner(
-            "Searching PubMed, Europe PMC, arXiv, Crossref and Wikipedia · ranking passages · "
-            "evaluating evidence sufficiency…"
-        ):
-            try:
-                result = run_query(
-                    query,
-                    config["sources"],
-                    config["top_k"],
-                    config["threshold"],
-                    config["min_passages"],
-                    config["max_per_source"],
-                    _fingerprint(settings),
-                )
-                st.session_state.result = result
-                st.session_state.last_error = None
-                st.session_state.history.insert(
-                    0,
-                    {
-                        "question": query,
-                        "run_id": result.run_id,
-                        "time": dt.datetime.now().strftime("%H:%M:%S"),
-                        "decision": result.decision,
-                        "strength": result.strength.grade,
-                        "citations": result.citations_used,
-                        "documents": result.documents_retrieved,
-                    },
-                )
-                # Keep one entry per question, most recent first.
-                seen_questions = set()
-                deduped = []
-                for entry in st.session_state.history:
-                    if entry["question"] in seen_questions:
-                        continue
-                    seen_questions.add(entry["question"])
-                    deduped.append(entry)
-                st.session_state.history = deduped[:12]
-            except Exception as exc:  # noqa: BLE001 - surface errors, never crash
-                st.session_state.last_error = redact(f"{type(exc).__name__}: {exc}")
-                st.session_state.result = None
-                if os.getenv("EVIDENCEBOT_DEBUG"):
-                    st.exception(exc)
+        st.info(backend_name)
 
 
-# ---------------------------------------------------------------------------
-# Results
-# ---------------------------------------------------------------------------
-
-result: Optional[EvidenceBotResult] = st.session_state.result
-
-if st.session_state.last_error:
-    st.error(
-        "The search could not be completed: "
-        + st.session_state.last_error
-        + "\n\nThis is usually a network or API-key problem. Check the source status panel "
-        "and your connection, then try again."
-    )
-
-if result is None:
-    section("2", "How EvidenceBot decides")
-    st.markdown(
-        """
-<div class="eb-status">
-  <div class="eb-status__body">
-    <b>1. Retrieve.</b> All selected databases are queried concurrently; failures in one source
-    never break the search.<br>
-    <b>2. Standardise &amp; de-duplicate.</b> Records become a unified document table, then
-    sentence-aware chunks that keep their parent metadata.<br>
-    <b>3. Rank.</b> Dense embeddings in FAISS (or NumPy fallback) + BM25 keyword search +
-    concept coverage produce a hybrid relevance score per passage.<br>
-    <b>4. Evaluate.</b> A deterministic evidence gate checks relevance, sufficiency, source
-    quality and consistency. It can refuse to answer.<br>
-    <b>5. Generate.</b> Only if the gate approves: the LLM may use nothing except the numbered
-    evidence passages.<br>
-    <b>6. Verify.</b> Every citation is mapped back to a retrieved source; unsupported or invented
-    citations are removed and the answer is flagged.
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="eb-notice eb-notice--info"><b>No evidence, no answer.</b> '
-        "If the retrieved passages cannot support the question, EvidenceBot returns exactly: "
-        "“Insufficient evidence. No reliable sources found in the retrieved passages.”</div>",
-        unsafe_allow_html=True,
-    )
-else:
-    section("2", "Evidence decision")
-    render_outcome_banner(result)
+def show_result_notices(result):
+    """Render notices and the decision banner consistently across pages."""
+    if result is None:
+        return
     render_notices(result)
+    render_outcome_banner(result)
 
-    section("3", "Answer")
-    render_answer(result)
 
-    if not result.is_abstention:
-        section("4", "Evidence strength")
-        render_strength(result.strength)
+def queue_example(question: str) -> None:
+    st.session_state.pending_question = question
+    st.session_state.active_page = "Research"
 
-    section("5", "Citations and sources")
-    render_citations(result)
 
-    section("6", "Retrieval analytics")
-    render_metrics(result)
+def load_history_entry(item: Dict[str, Any]) -> None:
+    st.session_state.result = item.get("result")
+    st.session_state.question_input = item.get("question", "")
+    st.session_state.active_page = "Research"
+
+
+def reset_current_session() -> None:
+    st.session_state.result = None
+    st.session_state.history = []
+    st.session_state.question_input = ""
+    st.session_state.last_error = None
+    st.session_state.run_requested = False
+    st.session_state.active_page = "Overview"
+    st.session_state.pop("pending_question", None)
+
+with st.sidebar:
+    st.markdown("## 🔬 EvidenceBot")
+    st.caption(f"Scientific evidence verification · v{APP_VERSION}")
+    st.divider()
+
+    st.markdown("### System status")
+    llm_status = generation_status(Settings())
+    if llm_status.get("llm_key_configured"):
+        provider = llm_status.get("provider", "LLM").upper()
+        st.success(f"{provider} API key configured")
+        st.caption(f"Model: `{llm_status.get('model', 'Unknown')}`")
+    else:
+        st.warning("Language-model API key not detected")
+    vector_status = backend_status()
     st.caption(
-        "Documents retrieved are all unique publications returned by the databases. "
-        "Passages used as evidence are the only ones the answer may cite."
+        "Vector store: "
+        + ("FAISS (in-memory)" if vector_status["faiss_available"] else "NumPy fallback")
     )
-    render_retrieval_details(result)
+    st.caption(f"Embeddings: `{llm_status['embedding_backend']}`")
 
-    section("7", "Evidence comparison across publications")
-    render_comparison(result)
-    render_evidence_assessment(result)
+    st.divider()
+    st.markdown("### Quick settings")
+    st.multiselect(
+        "Scientific sources",
+        options=list(SOURCE_OPTIONS),
+        key="selected_sources",
+        format_func=lambda source: SOURCE_OPTIONS[source],
+    )
+    st.slider("Results per source", 1, 20, step=1, key="max_per_source")
+    st.slider("Top K passages", 3, 30, step=1, key="top_k")
+    st.slider("Relevance threshold", 0.0, 1.0, step=0.05, key="threshold")
+    st.slider("Minimum evidence passages", 1, 10, step=1, key="min_passages")
 
+    st.divider()
+    st.metric("Questions analysed", len(st.session_state.history))
 
-# ---------------------------------------------------------------------------
-# History
-# ---------------------------------------------------------------------------
+    st.divider()
+    st.markdown("### Quick actions")
+    if st.button("Clear caches", key="sidebar_clear_caches", **stretch_kwargs()):
+        clear_all_caches()
+        run_query.clear()
+        st.toast("Application caches cleared.")
+    st.button(
+        "Reset current session",
+        key="sidebar_reset_session",
+        on_click=reset_current_session,
+        **stretch_kwargs(),
+    )
 
-section("8", "Search history (this session)")
-if not st.session_state.history:
-    st.caption("No searches yet in this session.")
-else:
-    for history_index, item in enumerate(st.session_state.history):
-        icon = {"ANSWERABLE": "✅", "PARTIALLY_ANSWERABLE": "⚠️", "UNANSWERABLE": "⛔"}.get(
-            item["decision"], "•"
+if selected_page == "Overview":
+    st.title("EvidenceBot")
+    st.markdown(
+        '<p class="page-intro">A research assistant that checks claims against '
+        "retrieved scientific evidence and abstains when support is insufficient.</p>",
+        unsafe_allow_html=True,
+    )
+
+    snapshot = st.columns(4)
+    snapshot[0].metric("Questions analysed", len(st.session_state.history))
+    snapshot[1].metric("Sources selected", len(st.session_state.selected_sources))
+    snapshot[2].metric("Passages per search", st.session_state.top_k)
+    snapshot[3].metric("Evidence threshold", f"{st.session_state.threshold:.2f}")
+
+    if st.session_state.result is not None:
+        result = st.session_state.result
+        st.subheader("Latest research result")
+        if st.session_state.history:
+            st.caption(f'Question: {st.session_state.history[0]["question"]}')
+        render_metrics(result)
+        show_result_notices(result)
+        render_answer(result)
+        st.button(
+            "Open full evidence assessment",
+            key="overview_open_evidence",
+            on_click=lambda: st.session_state.update(active_page="Evidence"),
         )
-        columns = st.columns([0.6, 5.2, 1.4, 1.0, 1.2])
-        columns[0].markdown(f"**{icon}**")
-        columns[1].markdown(item["question"])
-        columns[2].caption(f"{item['strength']} · {item['citations']} citations")
-        columns[3].caption(item["time"])
-        if columns[4].button("Re-run", key=f"rerun_{history_index}_{item['time']}"):
-            st.session_state.pending_question = item["question"]
-            st.session_state.run_requested = True
-            st.rerun()
-    if st.button("Clear history"):
-        st.session_state.history = []
-        st.rerun()
+    else:
+        st.info(
+            "No research question has been analysed in this session yet. "
+            "Open the Research tab to submit a question."
+        )
+
+    st.subheader("Evidence workflow")
+    workflow = st.columns(4)
+    workflow_steps = (
+        ("01", "Retrieve", "Search selected scientific sources."),
+        ("02", "Rank", "Surface relevant passages."),
+        ("03", "Assess", "Check evidence sufficiency and quality."),
+        ("04", "Answer", "Generate a grounded answer or abstain."),
+    )
+    for column, (number, title, description) in zip(workflow, workflow_steps):
+        with column.container(border=True):
+            st.markdown(f"**{number}**")
+            st.markdown(f"### {title}")
+            st.caption(description)
+
+elif selected_page == "Research":
+    st.title("Research")
+    st.markdown(
+        '<p class="page-intro">Ask a focused research question. '
+        "EvidenceBot will retrieve sources, assess support, and report limitations.</p>",
+        unsafe_allow_html=True,
+    )
+
+    with st.form("research_form", clear_on_submit=False):
+        question = st.text_area(
+            "Research question",
+            key="question_input",
+            height=115,
+            placeholder="e.g. Does mixed-cultivar wheat planting reduce powdery mildew infection?",
+        )
+        submitted = st.form_submit_button(
+            "Analyse evidence",
+            type="primary",
+            use_container_width=True,
+        )
+
+    st.caption("Or start with an example question")
+    example_columns = st.columns(2)
+    for index, (example_question, tag) in enumerate(EXAMPLES):
+        with example_columns[index % 2]:
+            st.button(
+                f"{tag} · {example_question}",
+                key=f"example_{index}",
+                use_container_width=True,
+                on_click=queue_example,
+                args=(example_question,),
+            )
+
+    if submitted:
+        cleaned_question = (question or "").strip()
+        if not cleaned_question:
+            st.warning("Enter a research question before starting the analysis.")
+        elif not st.session_state.selected_sources:
+            st.warning("Select at least one scientific source in Settings.")
+        else:
+            settings = current_config()
+            st.session_state.last_error = None
+            with st.spinner("Retrieving and assessing scientific evidence..."):
+                try:
+                    result = run_query(
+                        cleaned_question,
+                        tuple(st.session_state.selected_sources),
+                        st.session_state.top_k,
+                        st.session_state.threshold,
+                        st.session_state.min_passages,
+                        st.session_state.max_per_source,
+                        _fingerprint(settings),
+                    )
+                    st.session_state.result = result
+                    st.session_state.history.insert(
+                        0,
+                        {
+                            "question": cleaned_question,
+                            "result": result,
+                            "timestamp": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        },
+                    )
+                    st.session_state.history = st.session_state.history[:30]
+                except Exception as exc:  # noqa: BLE001 - surface errors safely
+                    st.session_state.last_error = redact(f"{type(exc).__name__}: {exc}")
+                    st.session_state.result = None
+
+    if st.session_state.last_error:
+        st.error(st.session_state.last_error)
+
+    if st.session_state.result is not None:
+        st.divider()
+        st.subheader("Analysis result")
+        result = st.session_state.result
+        render_metrics(result)
+        show_result_notices(result)
+        render_answer(result)
+        render_strength(result.strength)
+        render_citations(result)
+        st.button(
+            "View detailed evidence assessment",
+            key="research_open_evidence",
+            on_click=lambda: st.session_state.update(active_page="Evidence"),
+        )
 
 
-section("9", "About this build")
-with st.expander("Architecture, guarantees and known limitations", expanded=False):
+# ---------------------------------------------------------------------------
+# SOURCES
+# ---------------------------------------------------------------------------
+elif selected_page == "Sources":
+    st.title("Sources")
+    st.markdown(
+        '<p class="page-intro">Inspect the references and retrieval information '
+        "for the latest analysis.</p>",
+        unsafe_allow_html=True,
+    )
+
+    result = st.session_state.result
+    if result is None:
+        st.info("Run a research question first. Its references will appear here.")
+    else:
+        render_citations(result)
+        st.divider()
+        st.subheader("Retrieval details")
+        render_retrieval_details(result)
+
+
+# ---------------------------------------------------------------------------
+# EVIDENCE
+# ---------------------------------------------------------------------------
+elif selected_page == "Evidence":
+    st.title("Evidence assessment")
+    st.markdown(
+        '<p class="page-intro">Review the evidence-strength decision, '
+        "supporting passages, comparison, and reasons for any abstention.</p>",
+        unsafe_allow_html=True,
+    )
+
+    result = st.session_state.result
+    if result is None:
+        st.info("There is no evidence assessment yet. Run a research question first.")
+    else:
+        show_result_notices(result)
+        render_strength(result.strength)
+        render_evidence_assessment(result)
+        render_comparison(result)
+        render_retrieval_details(result)
+
+
+# ---------------------------------------------------------------------------
+# SETTINGS
+# ---------------------------------------------------------------------------
+elif selected_page == "Settings":
+    st.title("Settings")
+    st.markdown(
+        '<p class="page-intro">Configure retrieval and evidence-ranking behaviour. '
+        "Changes apply to the next analysis.</p>",
+        unsafe_allow_html=True,
+    )
+
+    st.subheader("Scientific sources")
+    st.info("Adjust scientific sources and retrieval parameters from the sidebar.")
+    st.write(
+        ", ".join(
+            SOURCE_OPTIONS[source]
+            for source in st.session_state.selected_sources
+        )
+        or "No sources selected"
+    )
+    st.caption(
+        f"{st.session_state.top_k} passages · threshold "
+        f"{st.session_state.threshold:.2f} · "
+        f"{st.session_state.min_passages} minimum evidence passages · "
+        f"{st.session_state.max_per_source} results per source"
+    )
+
+    st.divider()
+    st.subheader("Model and backend status")
+    settings = current_config()
+    show_system_status(settings)
+
+    st.subheader("API key configuration")
     st.markdown(
         """
-**Pipeline.** `retrieval/` (PubMed E-utilities via Biopython, Europe PMC, arXiv, Crossref, Wikipedia) → `processing/` (cleaning, de-duplication, chunking) → `ranking/` (local hashing or OpenAI embeddings, FAISS with NumPy fallback, BM25, hybrid reranker) → `evidence/` (evidence gate, abstention, citation validator, strength grading) → `generation/` (Groq or OpenAI-compatible structured JSON generation) → `ui/`.
+        Configure your provider key in the environment used to run Streamlit
+        (for example, Codespaces Secrets or your local `.env` file). Do not paste
+        API keys into this page or commit them to GitHub.
 
-**Guarantees.**
-- The evidence gate runs before any generation call and cannot be overridden by the LLM.
-- Abstention returns the exact message: *“Insufficient evidence. No reliable sources found in
-  the retrieved passages.”*
-- Citation numbers are re-mapped to retrieved passages only; unknown ids, unsupported claims,
-  unknown DOIs and URLs are rejected and removed.
-- Evidence strength is computed by explicit rules, never by the model. It is not a probability.
-- Wikipedia and preprints are labelled and down-weighted; background material never satisfies
-  the evidence requirement.
-
-**Known limitations.**
-- Retrieval only sees abstracts unless open-access full text is available (Europe PMC).
-- Consistency and claim support use transparent lexical heuristics, so paraphrases can be
-  flagged conservatively — the system prefers withholding a claim to overstating one.
-- Crossref often has no abstract; such records are marked *metadata only*.
-- A single weak source cannot produce an answer (MINIMUM_EVIDENCE_PASSAGES), which can look
-  strict on narrow questions.
-- Without a configured LLM provider API key, the app still retrieves,
-    ranks and evaluates evidence, but uses an extractive digest instead
-    of a synthesised answer.
-- EvidenceBot never states that a claim is *false* because evidence is missing.
+        For a Groq setup, the environment variable is commonly
+        `GROQ_API_KEY`; use the exact variable name expected by your project's
+        `config.py`. After changing a secret, restart or rerun the app as required
+        by your environment.
         """
     )
 
-st.markdown(
-    '<div class="eb-footer">From real literature &nbsp;→&nbsp; to <b>trusted answers</b> · '
-    "Cite. Verify. Be honest.</div>",
-    unsafe_allow_html=True,
+    st.divider()
+    st.subheader("Maintenance")
+    if st.button("Clear application caches", type="secondary"):
+        try:
+            clear_all_caches()
+            st.success("Application caches cleared.")
+        except Exception as exc:
+            st.error(f"Could not clear caches: {redact(str(exc))}")
+
+
+# ---------------------------------------------------------------------------
+# HISTORY
+# ---------------------------------------------------------------------------
+elif selected_page == "History":
+    st.title("Research history")
+    st.markdown(
+        '<p class="page-intro">Questions analysed during this Streamlit session.</p>',
+        unsafe_allow_html=True,
+    )
+
+    history = st.session_state.history
+    if not history:
+        st.info("No questions have been analysed in this session.")
+    else:
+        st.caption(f"{len(history)} question(s) in this session")
+        for index, item in enumerate(history):
+            question_text = item.get("question", "Untitled question")
+            timestamp = item.get("timestamp", "")
+            with st.expander(f"{timestamp} — {question_text}", expanded=(index == 0)):
+                st.button(
+                    "Load this result",
+                    key=f"history_load_{index}",
+                    on_click=load_history_entry,
+                    args=(item,),
+                )
+        if st.button("Clear session history", type="secondary"):
+            st.session_state.history = []
+            st.session_state.result = None
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# ABOUT
+# ---------------------------------------------------------------------------
+elif selected_page == "About":
+    st.title("About EvidenceBot")
+    st.markdown(
+        """
+        EvidenceBot is designed to support research exploration by retrieving
+        scientific literature, ranking relevant material, assessing whether the
+        retrieved evidence is sufficient, and generating answers grounded in
+        the available sources.
+
+        **Typical pipeline**
+
+        1. **Retrieval:** query configured literature and reference services.
+        2. **Processing:** normalise, deduplicate, and prepare retrieved records.
+        3. **Ranking:** identify relevant documents and passages.
+        4. **Evidence gate:** determine whether the available material meets the
+           configured support requirements.
+        5. **Generation and validation:** produce a grounded response and check
+           its citations, or abstain when support is insufficient.
+
+        **Important limitations**
+
+        - Retrieved literature may be incomplete or unavailable.
+        - A relevance score is not proof that a claim is true.
+        - EvidenceBot is a research aid, not a substitute for reading and
+          critically evaluating the original papers.
+        - Session history is stored in Streamlit session state and is not a
+          permanent database.
+        """
+    )
+    st.caption(f"EvidenceBot version {APP_VERSION}")
+
+
+# Consistent footer across all pages.
+st.divider()
+st.caption(
+    "EvidenceBot · Grounded research assistance · Always verify important claims "
+    "against the original scientific publications."
 )
