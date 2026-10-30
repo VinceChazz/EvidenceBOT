@@ -1,0 +1,38 @@
+
+PMID- 26719248
+OWN- NLM
+STAT- MEDLINE
+TI  - Interleukin-6 and autoimmunity: a review of the pathogenic role of IL-6 in
+      rheumatoid arthritis.
+AB  - Interleukin-6 (IL-6) is a pleiotropic cytokine with a central role in
+      rheumatoid arthritis. IL-6 activates JAK/STAT3 signalling in synovial
+      tissue, promotes Th17 differentiation and supports B-cell autoantibody
+      production. IL-6 receptor blockade reduces C-reactive protein and improves
+      tender joint counts in patients with rheumatoid arthritis.
+AU  - Hanow I
+AU  - Tanaka M
+JT  - Journal of Immunology Research
+TA  - J Immunol Res
+DP  - 2016 Aug
+LID - 10.1155/2016/2671924 [doi]
+AID - 10.1155/2016/2671924 [doi]
+PT  - Journal Article
+PT  - Review
+SO  - J Immunol Res. 2016;2016:2671924.
+
+PMID- 30123456
+OWN- NLM
+STAT- MEDLINE
+TI  - Randomised controlled trial of interleukin-6 receptor blockade in active
+      rheumatoid arthritis.
+AB  - In this randomised controlled trial, interleukin-6 receptor blockade improved
+      American College of Rheumatology response rates and reduced disease activity
+      scores in patients with active rheumatoid arthritis. Serious infection rates
+      were modestly increased.
+AU  - Okafor A
+JT  - Annals of the Rheumatic Diseases
+DP  - 2018 Jun
+AID - 10.1136/annrheumdis-2018-0001 [doi]
+PT  - Randomized Controlled Trial
+SO  - Ann Rheum Dis. 2018;77:1-9.
+
