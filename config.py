@@ -7,8 +7,8 @@ All tunable parameters live here. Values are resolved in this order:
 3. Streamlit secrets (``.streamlit/secrets.toml``) when running inside Streamlit.
 4. Sensible defaults.
 
-Secrets (the OpenAI API key) are only ever read from the environment / Streamlit
-secrets. They are never hard-coded and never rendered in the UI or logs.
+Secrets (Groq, OpenAI, and NCBI API keys) are only ever read from the environment
+or Streamlit secrets. They are never hard-coded or rendered in the UI or logs.
 """
 
 from __future__ import annotations
@@ -88,11 +88,19 @@ class Settings:
         default_factory=lambda: _env("OPENAI_API_KEY")
     )
     openai_model: str = field(
-        default_factory=lambda: _env("OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+        default_factory=lambda: (
+            _env(
+                "LLM_MODEL",
+                _env("OPENAI_MODEL", "llama-3.3-70b-versatile")
+            )
+            or "llama-3.3-70b-versatile"
+        )
     )
     openai_embedding_model: str = field(
-        default_factory=lambda: _env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-        or "text-embedding-3-small"
+        default_factory=lambda: (
+            _env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+            or "text-embedding-3-small"
+        )
     )
     openai_base_url: Optional[str] = field(
         default_factory=lambda: _env("OPENAI_BASE_URL")
@@ -106,12 +114,21 @@ class Settings:
     )
     #: "auto" -> OpenAI embeddings when a key exists, otherwise the local embedder.
     embedding_backend: str = field(
-        default_factory=lambda: (_env("EMBEDDING_BACKEND", "auto") or "auto").lower()
+        default_factory=lambda: (
+            _env("EMBEDDING_BACKEND", "local") or "local"
+        ).lower()
     )
     embedding_batch_size: int = field(
         default_factory=lambda: _env_int("EMBEDDING_BATCH_SIZE", 64)
     )
+    # LLM provider configuration
+    llm_provider: str = field(
+        default_factory=lambda: (_env("LLM_PROVIDER", "groq") or "groq").lower()
+    )
 
+    groq_api_key: Optional[str] = field(
+        default_factory=lambda: _env("GROQ_API_KEY")
+    )
     # --------------------------------------------------------- Retrieval ---
     max_results_per_source: int = field(
         default_factory=lambda: _env_int("MAX_RESULTS_PER_SOURCE", 8)
@@ -214,6 +231,16 @@ class Settings:
             self.enabled_sources = tuple(
                 s.strip() for s in self.enabled_sources.split(",") if s.strip()
             )
+        self.llm_provider = self.llm_provider.lower().strip()
+        if self.llm_provider not in {"groq", "openai"}:
+            raise ValueError(
+                "LLM_PROVIDER must be either 'groq' or 'openai'."
+            )
+        self.embedding_backend = self.embedding_backend.lower().strip()
+        if self.embedding_backend not in {"local", "openai", "auto"}:
+            raise ValueError(
+                "EMBEDDING_BACKEND must be 'local', 'openai', or 'auto'."
+            )
         self.dense_weight, self.bm25_weight = _normalise_weights(
             self.dense_weight, self.bm25_weight
         )
@@ -226,6 +253,29 @@ class Settings:
     @property
     def has_openai_key(self) -> bool:
         return bool(self.openai_api_key and self.openai_api_key.strip())
+
+    @property
+    def has_llm_key(self) -> bool:
+        if self.llm_provider == "groq":
+            return bool(self.groq_api_key and self.groq_api_key.strip())
+
+        return self.has_openai_key
+
+    @property
+    def llm_api_key(self) -> Optional[str]:
+        if self.llm_provider == "groq":
+            return self.groq_api_key
+        return self.openai_api_key
+
+    @property
+    def llm_base_url(self) -> Optional[str]:
+        if self.llm_provider == "groq":
+            return "https://api.groq.com/openai/v1"
+        return self.openai_base_url
+
+    @property
+    def llm_model(self) -> str:
+        return self.openai_model
 
     @property
     def use_openai_embeddings(self) -> bool:
@@ -251,12 +301,19 @@ class Settings:
         return out
 
     def with_overrides(self, **kwargs: Any) -> "Settings":
-        """Return a copy with the given fields replaced (used by the UI sliders)."""
+        """Return a copy with the given fields replaced."""
 
-        data = {f.name: getattr(self, f.name) for f in fields(self)}
-        data.update({k: v for k, v in kwargs.items() if k in data})
-        clone = Settings(**data)
-        return clone
+        data = {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+        }
+        unknown = set(kwargs) - set(data)
+        if unknown:
+            raise ValueError(
+                f"Unknown settings override(s): {', '.join(sorted(unknown))}"
+            )
+        data.update(kwargs)
+        return Settings(**data)
 
 
 def _normalise_weights(dense: float, sparse: float) -> tuple:

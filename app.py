@@ -37,6 +37,7 @@ from ui.components import (  # noqa: E402
 )
 from ui.styles import CSS  # noqa: E402
 from utils.cache import clear_all_caches  # noqa: E402
+from utils.logging_config import redact  # noqa: E402
 
 APP_VERSION = "1.0.0"
 
@@ -115,12 +116,15 @@ def run_query(
 
 
 def _fingerprint(settings: Settings) -> str:
-    """Cache key component that changes with model/key availability, never the key."""
+    """Cache key component that changes with model/configuration, never the API key."""
 
     return "|".join(
         [
-            "key" if settings.has_openai_key else "nokey",
-            settings.openai_model,
+            "key" if settings.has_llm_key else "nokey",
+            settings.llm_provider,
+            settings.llm_model,
+            str(settings.llm_temperature),
+            str(settings.llm_max_output_tokens),
             settings.openai_embedding_model,
             settings.resolved_embedding_backend(),
             str(settings.chunk_size_words),
@@ -201,12 +205,14 @@ def render_sidebar() -> Dict[str, Any]:
 
         st.markdown("### Model status")
         status = generation_status(settings)
-        if status["openai_key_configured"]:
-            st.success(f"OpenAI key detected · `{status['model']}`")
+        if status["llm_key_configured"]:
+            st.success(
+                f"{status['provider'].upper()} API key detected · `{status['model']}`"
+            )
         else:
             st.warning(
-                "No OPENAI_API_KEY detected. Retrieval, ranking and the evidence gate still "
-                "work; answers are replaced by a verbatim extractive digest."
+                "No language-model API key detected. Retrieval, ranking and the "
+                "evidence gate still work; answers use an extractive digest."
             )
         st.caption(
             f"Embeddings: `{status['embedding_backend']}`"
@@ -356,7 +362,7 @@ if should_run:
                     deduped.append(entry)
                 st.session_state.history = deduped[:12]
             except Exception as exc:  # noqa: BLE001 - surface errors, never crash
-                st.session_state.last_error = f"{type(exc).__name__}: {exc}"
+                st.session_state.last_error = redact(f"{type(exc).__name__}: {exc}")
                 st.session_state.result = None
                 if os.getenv("EVIDENCEBOT_DEBUG"):
                     st.exception(exc)
@@ -386,8 +392,8 @@ if result is None:
     never break the search.<br>
     <b>2. Standardise &amp; de-duplicate.</b> Records become a unified document table, then
     sentence-aware chunks that keep their parent metadata.<br>
-    <b>3. Rank.</b> Dense embeddings in FAISS + BM25 keyword search + concept coverage produce a
-    hybrid relevance score per passage.<br>
+    <b>3. Rank.</b> Dense embeddings in FAISS (or NumPy fallback) + BM25 keyword search +
+    concept coverage produce a hybrid relevance score per passage.<br>
     <b>4. Evaluate.</b> A deterministic evidence gate checks relevance, sufficiency, source
     quality and consistency. It can refuse to answer.<br>
     <b>5. Generate.</b> Only if the gate approves: the LLM may use nothing except the numbered
@@ -463,10 +469,7 @@ section("9", "About this build")
 with st.expander("Architecture, guarantees and known limitations", expanded=False):
     st.markdown(
         """
-**Pipeline.** `retrieval/` (PubMed E-utilities via Biopython, Europe PMC, arXiv, Crossref,
-Wikipedia) → `processing/` (cleaning, de-duplication, chunking) → `ranking/` (OpenAI or offline
-embeddings, FAISS, BM25, hybrid reranker) → `evidence/` (evidence gate, abstention, citation
-validator, strength grading) → `generation/` (OpenAI structured JSON) → `ui/`.
+**Pipeline.** `retrieval/` (PubMed E-utilities via Biopython, Europe PMC, arXiv, Crossref, Wikipedia) → `processing/` (cleaning, de-duplication, chunking) → `ranking/` (local hashing or OpenAI embeddings, FAISS with NumPy fallback, BM25, hybrid reranker) → `evidence/` (evidence gate, abstention, citation validator, strength grading) → `generation/` (Groq or OpenAI-compatible structured JSON generation) → `ui/`.
 
 **Guarantees.**
 - The evidence gate runs before any generation call and cannot be overridden by the LLM.
@@ -485,8 +488,9 @@ validator, strength grading) → `generation/` (OpenAI structured JSON) → `ui/
 - Crossref often has no abstract; such records are marked *metadata only*.
 - A single weak source cannot produce an answer (MINIMUM_EVIDENCE_PASSAGES), which can look
   strict on narrow questions.
-- Without `OPENAI_API_KEY` the app still retrieves, ranks and gated-decides, but shows a verbatim
-  extractive digest instead of a synthesised answer.
+- Without a configured LLM provider API key, the app still retrieves,
+    ranks and evaluates evidence, but uses an extractive digest instead
+    of a synthesised answer.
 - EvidenceBot never states that a claim is *false* because evidence is missing.
         """
     )

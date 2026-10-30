@@ -1,7 +1,7 @@
-"""OpenAI chat-completion wrapper for grounded answer generation.
+"""Provider-independent chat-completion wrapper for grounded answer generation.
 
-The client is injectable so the whole pipeline can be tested with mocked
-responses and never depends on paid API calls in CI.
+Supports OpenAI-compatible chat completion APIs, including Groq.
+The client is injectable so the pipeline can be tested without paid API calls.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ logger = get_logger("generation.llm")
 
 
 class LLMUnavailable(RuntimeError):
-    """Raised when no LLM can be used (missing key, API error, invalid output)."""
+    """Raised when no LLM can be used."""
 
 
 @dataclass
@@ -39,7 +39,7 @@ class LLMResult:
 
 
 class LLMClient:
-    """Thin, retrying wrapper around the OpenAI Chat Completions API."""
+    """Retrying wrapper around an OpenAI-compatible chat completion API."""
 
     def __init__(
         self,
@@ -48,27 +48,36 @@ class LLMClient:
         cache: Optional[TTLCache] = None,
     ) -> None:
         self.settings = settings
-        self.model = settings.openai_model
+        self.model = settings.llm_model
+        self.provider = getattr(settings, "llm_provider", "openai").lower()
+
         self._client = client
         self._client_error: Optional[str] = None
+
         self.cache = cache or TTLCache(
-            "llm", ttl_seconds=max(settings.cache_ttl_seconds, 3600), enabled=settings.cache_enabled
+            "llm",
+            ttl_seconds=max(settings.cache_ttl_seconds, 3600),
+            enabled=settings.cache_enabled,
         )
-        if self._client is None and settings.openai_api_key:
+
+        if self._client is None and settings.has_llm_key:
             try:
                 from openai import OpenAI
 
                 self._client = OpenAI(
-                    api_key=settings.openai_api_key,
-                    base_url=settings.openai_base_url or None,
+                    api_key=settings.llm_api_key,
+                    base_url=settings.llm_base_url or None,
                     timeout=settings.llm_timeout_seconds,
                     max_retries=1,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._client_error = redact(str(exc))
-                logger.warning("OpenAI client could not be created: %s", self._client_error)
+                logger.warning(
+                    "Could not initialise %s client: %s",
+                    self.provider,
+                    self._client_error,
+                )
 
-    # ------------------------------------------------------------------
     @property
     def is_available(self) -> bool:
         return self._client is not None
@@ -77,11 +86,12 @@ class LLMClient:
     def unavailable_reason(self) -> Optional[str]:
         if self._client is not None:
             return None
+
         if self._client_error:
             return self._client_error
-        return "OPENAI_API_KEY is not configured."
 
-    # ------------------------------------------------------------------
+        return f"No API key configured for the {self.provider} provider."
+
     def generate_json(
         self,
         system_prompt: str,
@@ -89,12 +99,28 @@ class LLMClient:
         use_cache: bool = True,
         temperature: Optional[float] = None,
     ) -> LLMResult:
-        """Call the model and parse a JSON object from the response."""
+        """Generate and parse a JSON object."""
 
         if not self.is_available:
-            return LLMResult(error=self.unavailable_reason, model=self.model)
+            return LLMResult(
+                error=self.unavailable_reason,
+                model=self.model,
+            )
 
-        cache_key = stable_hash(self.model, system_prompt, user_prompt)
+        effective_temperature = (
+            self.settings.llm_temperature
+            if temperature is None
+            else temperature
+        )
+        cache_key = stable_hash(
+            self.provider,
+            self.model,
+            effective_temperature,
+            self.settings.llm_max_output_tokens,
+            system_prompt,
+            user_prompt,
+        )
+
         if use_cache:
             cached = self.cache.get(cache_key)
             if cached:
@@ -107,10 +133,10 @@ class LLMClient:
 
         started = time.perf_counter()
         last_error: Optional[str] = None
-        # Some models (reasoning models) reject ``temperature``/``max_tokens`` and need
-        # ``max_completion_tokens`` instead, so the call parameters are adjusted on retry.
+
         use_max_completion_tokens = False
         drop_temperature = False
+
         for attempt in range(3):
             try:
                 request: Dict[str, Any] = {
@@ -122,22 +148,37 @@ class LLMClient:
                     "response_format": {"type": "json_object"},
                     "timeout": self.settings.llm_timeout_seconds,
                 }
+
                 if not drop_temperature:
-                    request["temperature"] = (
-                        self.settings.llm_temperature if temperature is None else temperature
-                    )
+                    request["temperature"] = effective_temperature
+
                 if use_max_completion_tokens:
-                    request["max_completion_tokens"] = self.settings.llm_max_output_tokens
+                    request["max_completion_tokens"] = (
+                        self.settings.llm_max_output_tokens
+                    )
                 else:
-                    request["max_tokens"] = self.settings.llm_max_output_tokens
-                response = self._client.chat.completions.create(**request)  # type: ignore[union-attr]
+                    request["max_tokens"] = (
+                        self.settings.llm_max_output_tokens
+                    )
+
+                response = self._client.chat.completions.create(
+                    **request
+                )
+
                 raw = response.choices[0].message.content or ""
                 data = extract_json_object(raw)
+
                 if not data:
                     last_error = "Model returned no parsable JSON object."
-                    logger.warning("generation attempt %d: %s", attempt + 1, last_error)
+                    logger.warning(
+                        "Generation attempt %d: %s",
+                        attempt + 1,
+                        last_error,
+                    )
                     continue
+
                 elapsed = time.perf_counter() - started
+
                 usage = {}
                 try:
                     usage = {
@@ -145,8 +186,9 @@ class LLMClient:
                         "completion_tokens": response.usage.completion_tokens,
                         "total_tokens": response.usage.total_tokens,
                     }
-                except Exception:  # pragma: no cover - usage optional
+                except Exception:
                     pass
+
                 result = LLMResult(
                     data=data,
                     raw_text=raw,
@@ -154,28 +196,55 @@ class LLMClient:
                     elapsed_seconds=elapsed,
                     usage=usage,
                 )
+
                 if use_cache:
                     self.cache.set(
                         cache_key,
-                        {"data": data, "raw_text": raw},
+                        {
+                            "data": data,
+                            "raw_text": raw,
+                        },
                     )
+
                 logger.info(
-                    "generation ok in %.2fs (%s tokens)",
+                    "%s generation succeeded in %.2fs (%s tokens)",
+                    self.provider,
                     elapsed,
                     usage.get("total_tokens", "?"),
                 )
+
                 return result
-            except Exception as exc:  # noqa: BLE001 - surface as a clean error
-                last_error = redact(f"{type(exc).__name__}: {exc}")
+
+            except Exception as exc:
+                last_error = redact(
+                    f"{type(exc).__name__}: {exc}"
+                )
+
                 message = str(exc).lower()
-                if "max_tokens" in message and "max_completion_tokens" in message:
+
+                if (
+                    "max_tokens" in message
+                    and "max_completion_tokens" in message
+                ):
                     use_max_completion_tokens = True
-                elif "max_completion_tokens" in message and "not supported" in message:
+
+                elif (
+                    "max_completion_tokens" in message
+                    and "not supported" in message
+                ):
                     use_max_completion_tokens = False
+
                 if "temperature" in message:
                     drop_temperature = True
-                logger.warning("generation attempt %d failed: %s", attempt + 1, last_error)
-                time.sleep(0.5 * (attempt + 1))
+
+                logger.warning(
+                    "Generation attempt %d failed: %s",
+                    attempt + 1,
+                    last_error,
+                )
+
+                if attempt < 2:
+                    time.sleep(0.5 * (attempt + 1))
 
         return LLMResult(
             error=last_error or "Unknown generation failure",
@@ -184,15 +253,21 @@ class LLMClient:
         )
 
 
-def build_llm_client(settings: Settings, client: Optional[object] = None) -> LLMClient:
+def build_llm_client(
+    settings: Settings,
+    client: Optional[object] = None,
+) -> LLMClient:
     return LLMClient(settings, client=client)
 
 
 def generation_status(settings: Settings) -> Dict[str, Any]:
+    """Return model and embedding configuration for the dashboard."""
+
     return {
-        "openai_key_configured": settings.has_openai_key,
-        "model": settings.openai_model,
+        "llm_key_configured": settings.has_llm_key,
+        "provider": getattr(settings, "llm_provider", "openai"),
+        "model": settings.llm_model,
         "embedding_model": settings.openai_embedding_model,
         "embedding_backend": settings.resolved_embedding_backend(),
-        "base_url": settings.openai_base_url or "https://api.openai.com/v1",
+        "base_url": settings.llm_base_url,
     }
