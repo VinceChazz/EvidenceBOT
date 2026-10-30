@@ -2,13 +2,13 @@
 
 Two backends are available:
 
-* ``openai`` — the OpenAI embeddings API (default whenever a key is configured).
-* ``local``  — a deterministic hashed-feature embedder (word, stem, char-ngram
-  and bigram features). It is not a neural model: it exists so the pipeline is
-  fully functional without a paid key and so the test-suite never needs network.
+* ``local`` — deterministic hashed-feature embeddings. This is the default.
+* ``openai`` — OpenAI embeddings API, enabled explicitly through configuration
+    or through ``EMBEDDING_BACKEND=auto`` when an OpenAI key is available.
 
-Both expose the same interface and a ``calibration`` range used to map raw
-cosine similarity into a comparable 0-1 relevance scale.
+Both expose the same interface and a calibration range used to map raw cosine
+similarity into a comparable 0-1 relevance scale. Groq is used for answer
+generation, not embeddings.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import numpy as np
 from config import Settings
 from utils.cache import TTLCache
 from utils.helpers import clean_text, simple_stem, stable_hash, tokenize
-from utils.logging_config import get_logger
+from utils.logging_config import get_logger, redact
 
 logger = get_logger("ranking.embeddings")
 
@@ -201,7 +201,7 @@ class CachedEmbeddingService:
         if self.degraded:
             return
         self.degraded = True
-        self.degraded_reason = f"{type(exc).__name__}: {exc}"[:180]
+        self.degraded_reason = redact(f"{type(exc).__name__}: {exc}")[:180]
         self.provider = LocalHashingEmbeddings()
         self._query_cache.clear()
         logger.warning(
@@ -237,6 +237,49 @@ class CachedEmbeddingService:
         self._query_cache.set(key, [float(v) for v in vector])
         return vector
 
+    def embed_pair(
+        self,
+        texts: Sequence[str],
+        question: str,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Embed passages and query using the same provider."""
+
+        passages = list(texts)
+
+        def calculate_pair() -> Tuple[np.ndarray, np.ndarray]:
+            matrix = self.provider.embed_texts(passages)
+            query_vector = self.provider.embed_texts([question])[0]
+            if matrix.ndim != 2 or query_vector.ndim != 1:
+                raise ValueError("Invalid embedding dimensions.")
+            if matrix.shape[1] != query_vector.shape[0]:
+                raise ValueError(
+                    "Passage and query embeddings have incompatible dimensions."
+                )
+            return matrix, query_vector
+
+        key = stable_hash(self.provider.name, question)
+        try:
+            matrix = self.provider.embed_texts(passages)
+            cached = self._query_cache.get(key)
+            if cached is not None and len(cached) == self.provider.dimension:
+                query_vector = np.asarray(cached, dtype=np.float32)
+            else:
+                query_vector = self.provider.embed_texts([question])[0]
+                self._query_cache.set(
+                    key, [float(v) for v in query_vector]
+                )
+            if matrix.ndim != 2 or query_vector.ndim != 1:
+                raise ValueError("Invalid embedding dimensions.")
+            if matrix.shape[1] != query_vector.shape[0]:
+                raise ValueError(
+                    "Passage and query embeddings have incompatible dimensions."
+                )
+            return matrix, query_vector
+        except Exception as exc:  # noqa: BLE001
+            self._degrade(exc)
+            # Both are recalculated after switching embedding providers.
+            return calculate_pair()
+
     def calibrate(self, cosine: float) -> float:
         return self.provider.calibrate(cosine)
 
@@ -261,7 +304,10 @@ def build_embedding_service(
         try:
             return CachedEmbeddingService(OpenAIEmbeddings(settings, client=client))
         except Exception as exc:  # noqa: BLE001 - never hard-fail on embeddings
-            logger.warning("OpenAI embeddings unavailable (%s); using local embedder", exc)
+            logger.warning(
+                "OpenAI embeddings unavailable (%s); using local embedder",
+                redact(f"{type(exc).__name__}: {exc}"),
+            )
             return CachedEmbeddingService(LocalHashingEmbeddings())
     return CachedEmbeddingService(LocalHashingEmbeddings())
 

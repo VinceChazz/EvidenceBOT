@@ -60,6 +60,7 @@ class RankingResult:
 
     def to_rows(self) -> List[Dict[str, object]]:
         rows = []
+        threshold = self.stats.get("threshold", 0.0)
         for rank, passage in enumerate(self.passages, start=1):
             rows.append(
                 {
@@ -73,8 +74,7 @@ class RankingResult:
                     "bm25": round(passage.bm25_score, 3),
                     "lexical": round(passage.lexical_score, 3),
                     "relevance": round(passage.relevance_score, 3),
-                    "used_as_evidence": passage.relevance_score
-                    >= (self.stats.get("threshold") or -1),
+                    "used_as_evidence": passage.relevance_score >= threshold,
                 }
             )
         return rows
@@ -115,9 +115,15 @@ class HybridRanker:
         candidate_k: Optional[int] = None,
     ) -> RankingResult:
         started = time.perf_counter()
-        top_k = top_k or self.settings.top_k
+        top_k = self.settings.top_k if top_k is None else top_k
         threshold = self.settings.relevance_threshold if threshold is None else threshold
-        candidate_k = candidate_k or self.settings.candidate_k
+        candidate_k = (
+            self.settings.candidate_k
+            if candidate_k is None
+            else candidate_k
+        )
+        top_k = max(1, int(top_k))
+        candidate_k = max(top_k, int(candidate_k))
 
         result = RankingResult(embedding_backend=self.embedder.name)
 
@@ -132,11 +138,10 @@ class HybridRanker:
             return result
 
         texts = [p.text for p in passages]
-        matrix = self.embedder.embed_passages(texts)
+        matrix, query_vector = self.embedder.embed_pair(texts, question)
         store: BaseVectorStore = create_vector_store(
             matrix, [{"passage_id": p.passage_id} for p in passages]
         )
-        query_vector = self.embedder.embed_query(question)
         dense = store.scores(query_vector)
         if dense.shape[0] != len(passages):
             dense = cosine_matrix(query_vector, matrix)
@@ -181,7 +186,7 @@ class HybridRanker:
         per_document: Dict[str, int] = {}
         for passage in candidates:
             used = per_document.get(passage.document_id, 0)
-            if used >= 2 and len(candidates) > top_k:
+            if used >= 2:
                 continue
             selected.append(passage)
             per_document[passage.document_id] = used + 1
